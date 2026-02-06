@@ -1,6 +1,8 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import './App.css';
 import wekamawe from "./assets/WekaMaweWekaMawenimbayaa-KENYAHAKUNAMATATA360ph264-ezgif.com-video-cutter.mp4";
+import { supabase } from './lib/supabase';
+import type { Valentine } from './lib/supabase';
 
 interface Firework {
   id: number;
@@ -17,10 +19,28 @@ interface Particle {
   size: number;
 }
 
+// App modes
+type AppMode = 'create' | 'answer' | 'results' | 'already-answered';
+
 const COLORS = ['#be123c', '#e11d48', '#fda4af', '#fb7185', '#f43f5e', '#ec4899'];
 const VIDEO_URL = wekamawe;
 
+// Generate random code
+const generateCode = () => {
+  return Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 6);
+};
+
 function App() {
+  // Mode & data states
+  const [mode, setMode] = useState<AppMode>('create');
+  const [senderName, setSenderName] = useState('');
+  const [valentineData, setValentineData] = useState<Valentine | null>(null);
+  const [generatedLink, setGeneratedLink] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  // Original states for the YES/NO experience
   const [showQuestion, setShowQuestion] = useState(true);
   const [showCelebration, setShowCelebration] = useState(false);
   const [showVideo, setShowVideo] = useState(false);
@@ -29,6 +49,140 @@ function App() {
   const [noButtonText, setNoButtonText] = useState("No");
   
   const fireworkIdRef = useRef(0);
+
+  // Check URL params on load
+  useEffect(() => {
+    const checkUrl = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const resultsCode = params.get('results');
+
+      if (resultsCode) {
+        // Check results mode
+        await loadResults(resultsCode);
+      } else if (code) {
+        // Answer mode
+        await loadValentine(code);
+      } else {
+        setMode('create');
+        setLoading(false);
+      }
+    };
+    checkUrl();
+  }, []);
+
+  const loadValentine = async (code: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('valentines')
+        .select('*')
+        .eq('code', code)
+        .single();
+
+      if (error || !data) {
+        setError('Valentine not found 💔');
+        setLoading(false);
+        return;
+      }
+
+      setValentineData(data);
+      
+      if (data.reply) {
+        setMode('already-answered');
+      } else {
+        setMode('answer');
+      }
+    } catch {
+      setError('Something went wrong');
+    }
+    setLoading(false);
+  };
+
+  const loadResults = async (code: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('valentines')
+        .select('*')
+        .eq('code', code)
+        .single();
+
+      if (error || !data) {
+        setError('Valentine not found 💔');
+        setLoading(false);
+        return;
+      }
+
+      setValentineData(data);
+      setMode('results');
+    } catch {
+      setError('Something went wrong');
+    }
+    setLoading(false);
+  };
+
+  const createValentine = async () => {
+    if (!senderName.trim()) return;
+    
+    setLoading(true);
+    const code = generateCode();
+    
+    try {
+      const { error } = await supabase
+        .from('valentines')
+        .insert([{ code, sender_name: senderName.trim() }]);
+
+      if (error) {
+        setError('Failed to create. Try again!');
+        setLoading(false);
+        return;
+      }
+
+      const baseUrl = window.location.origin + window.location.pathname;
+      const link = `${baseUrl}?code=${code}`;
+      const resultsLink = `${baseUrl}?results=${code}`;
+      
+      setGeneratedLink(link);
+      setValentineData({ code, sender_name: senderName });
+      
+      // Store results link for later
+      localStorage.setItem(`valentine_${code}`, resultsLink);
+      
+    } catch {
+      setError('Failed to create');
+    }
+    setLoading(false);
+  };
+
+  const saveReply = async (reply: 'yes' | 'no') => {
+    if (!valentineData) return;
+    
+    try {
+      await supabase
+        .from('valentines')
+        .update({ reply, replied_at: new Date().toISOString() })
+        .eq('code', valentineData.code);
+    } catch {
+      // Continue anyway - UX first
+    }
+  };
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(generatedLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback
+      const input = document.createElement('input');
+      input.value = generatedLink;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   const noTexts = [
     "No",
@@ -85,19 +239,25 @@ function App() {
     showFireworks();
   }, [createFirework]);
 
-  const handleYes = () => {
+  const handleYes = async () => {
     setShowQuestion(false);
     setShowCelebration(true);
     startFireworksShow();
+    if (mode === 'answer') {
+      await saveReply('yes');
+    }
   };
 
-  const handleNoClick = () => {
+  const handleNoClick = async () => {
     const newAttempts = noAttempts + 1;
     setNoAttempts(newAttempts);
     
     if (newAttempts >= 5) {
       setShowQuestion(false);
       setShowVideo(true);
+      if (mode === 'answer') {
+        await saveReply('no');
+      };
     } else {
       const textIndex = Math.min(newAttempts, noTexts.length - 1);
       setNoButtonText(noTexts[textIndex]);
@@ -144,7 +304,31 @@ function App() {
 
       {/* Main Card */}
       <div className="w-full max-w-md z-10">
-        {showQuestion && (
+
+        {/* Loading State */}
+        {loading && (
+          <div className="smart-glass rounded-2xl p-12 text-center">
+            <div className="w-12 h-12 border-4 border-rose-200 border-t-rose-500 rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-slate-500">Loading...</p>
+          </div>
+        )}
+
+        {/* Error State */}
+        {!loading && error && (
+          <div className="smart-glass rounded-2xl p-12 text-center">
+            <div className="text-5xl mb-4">💔</div>
+            <p className="text-slate-600 text-lg">{error}</p>
+            <button
+              onClick={() => window.location.href = window.location.pathname}
+              className="btn-secondary mt-6 py-3 px-6 rounded-xl"
+            >
+              Go Home
+            </button>
+          </div>
+        )}
+
+        {/* CREATE MODE - Sender creates a valentine */}
+        {!loading && !error && mode === 'create' && !generatedLink && (
           <div className="smart-glass rounded-2xl p-10 md:p-12 text-center animate-fade-in">
             <div className="mb-8 flex justify-center">
               <div className="w-16 h-16 rounded-full bg-rose-50 flex items-center justify-center shadow-inner animate-heartbeat-subtle">
@@ -153,6 +337,96 @@ function App() {
                 </svg>
               </div>
             </div>
+
+            <h1 className="text-3xl md:text-4xl font-serif text-slate-800 mb-3 tracking-tight">
+              Send a Valentine 💌
+            </h1>
+            
+            <p className="text-slate-500 text-lg mb-8 font-light leading-relaxed">
+              Create your special link to share
+            </p>
+
+            <input
+              type="text"
+              placeholder="Your name..."
+              value={senderName}
+              onChange={(e) => setSenderName(e.target.value)}
+              className="w-full px-4 py-4 rounded-xl border border-slate-200 focus:border-rose-300 focus:outline-none focus:ring-2 focus:ring-rose-100 text-center text-lg mb-6"
+              maxLength={30}
+            />
+
+            <button
+              onClick={createValentine}
+              disabled={!senderName.trim()}
+              className="btn-primary w-full py-4 rounded-xl text-lg font-medium shadow-lg shadow-rose-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Create My Valentine Link ✨
+            </button>
+            
+            <div className="mt-8 text-xs text-slate-400 font-light tracking-widest uppercase">
+              February 14, 2026
+            </div>
+          </div>
+        )}
+
+        {/* LINK CREATED - Show the link to copy */}
+        {!loading && !error && mode === 'create' && generatedLink && (
+          <div className="smart-glass rounded-2xl p-10 md:p-12 text-center animate-fade-in">
+            <div className="text-5xl mb-6">🎉</div>
+
+            <h1 className="text-2xl md:text-3xl font-serif text-slate-800 mb-3 tracking-tight">
+              Your Valentine Link is Ready!
+            </h1>
+            
+            <p className="text-slate-500 mb-6 font-light">
+              Send this link to your special someone:
+            </p>
+
+            <div className="bg-slate-50 rounded-xl p-4 mb-4 break-all text-sm text-slate-600 font-mono">
+              {generatedLink}
+            </div>
+
+            <button
+              onClick={copyLink}
+              className="btn-primary w-full py-4 rounded-xl text-lg font-medium shadow-lg shadow-rose-200 mb-4"
+            >
+              {copied ? '✓ Copied!' : 'Copy Link 📋'}
+            </button>
+
+            <div className="bg-rose-50 rounded-xl p-4 text-sm text-rose-700">
+              <p className="font-medium mb-1">📬 Check replies later:</p>
+              <p className="text-xs break-all font-mono">
+                {window.location.origin + window.location.pathname}?results={valentineData?.code}
+              </p>
+            </div>
+            
+            <button
+              onClick={() => {
+                setGeneratedLink('');
+                setSenderName('');
+                setValentineData(null);
+              }}
+              className="btn-secondary mt-4 py-3 px-6 rounded-xl text-sm"
+            >
+              Create Another
+            </button>
+          </div>
+        )}
+
+        {/* ANSWER MODE - Recipient sees the question */}
+        {!loading && !error && mode === 'answer' && showQuestion && (
+          <div className="smart-glass rounded-2xl p-10 md:p-12 text-center animate-fade-in">
+            <div className="mb-8 flex justify-center">
+              <div className="w-16 h-16 rounded-full bg-rose-50 flex items-center justify-center shadow-inner animate-heartbeat-subtle">
+                <svg className="w-8 h-8 text-rose-500" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                </svg>
+              </div>
+            </div>
+
+            <p className="text-slate-500 text-sm mb-2 font-light">
+              From <span className="font-medium text-rose-500">{valentineData?.sender_name}</span>
+            </p>
 
             <h1 className="text-4xl md:text-5xl font-serif text-slate-800 mb-3 tracking-tight">
               Hello, Love.
@@ -171,7 +445,7 @@ function App() {
                 onClick={handleYes}
                 className="btn-primary w-full py-4 rounded-xl text-lg font-medium shadow-lg shadow-rose-200"
               >
-                Yes, Absolutely
+                Yes, Absolutely 💕
               </button>
               
               <button
@@ -188,7 +462,8 @@ function App() {
           </div>
         )}
 
-        {showCelebration && (
+        {/* CELEBRATION - After YES */}
+        {!loading && !error && (mode === 'answer' || mode === 'create') && showCelebration && (
           <div className="smart-glass rounded-2xl p-12 text-center">
             <div className="mb-8">
                <svg className="w-20 h-20 text-rose-500 mx-auto animate-heartbeat-subtle" fill="currentColor" viewBox="0 0 24 24">
@@ -201,17 +476,21 @@ function App() {
             </h1>
             
             <p className="text-slate-600 text-xl font-light leading-relaxed mb-8">
-              You've made this day incredibly special. <br/>
-              I can't wait to celebrate with you.
+              {mode === 'answer' ? (
+                <>You've made <span className="font-medium text-rose-500">{valentineData?.sender_name}</span>'s day! 💕</>
+              ) : (
+                <>You've made this day incredibly special.<br/>I can't wait to celebrate with you.</>
+              )}
             </p>
 
             <div className="inline-block py-2 px-6 rounded-full bg-rose-50 text-rose-600 font-medium text-sm tracking-wide">
-              YOU & ME
+              YOU & ME 💕
             </div>
           </div>
         )}
 
-        {showVideo && (
+        {/* VIDEO - After too many NO's */}
+        {!loading && !error && (mode === 'answer' || mode === 'create') && showVideo && (
           <div className="smart-glass rounded-2xl p-8 text-center max-w-2xl mx-auto">
             <h1 className="text-3xl font-serif text-slate-800 mb-4">
               Just a Moment...
@@ -243,6 +522,68 @@ function App() {
             >
               Let me reconsider
             </button>
+          </div>
+        )}
+
+        {/* RESULTS MODE - Sender checks reply */}
+        {!loading && !error && mode === 'results' && (
+          <div className="smart-glass rounded-2xl p-10 md:p-12 text-center animate-fade-in">
+            <div className="mb-6">
+              {valentineData?.reply === 'yes' ? (
+                <div className="text-6xl">💕</div>
+              ) : valentineData?.reply === 'no' ? (
+                <div className="text-6xl">💔</div>
+              ) : (
+                <div className="text-6xl">⏳</div>
+              )}
+            </div>
+
+            <h1 className="text-2xl md:text-3xl font-serif text-slate-800 mb-3 tracking-tight">
+              {valentineData?.reply === 'yes' 
+                ? "They said YES! 🎉" 
+                : valentineData?.reply === 'no'
+                  ? "They said no... 😢"
+                  : "Waiting for reply..."}
+            </h1>
+            
+            <p className="text-slate-500 mb-6 font-light">
+              {valentineData?.reply 
+                ? `Replied on ${new Date(valentineData.replied_at || '').toLocaleDateString()}`
+                : "They haven't answered yet. Check back later!"}
+            </p>
+
+            {valentineData?.reply === 'yes' && (
+              <div className="bg-rose-50 rounded-xl p-4 text-rose-700">
+                Time to plan something special! 💝
+              </div>
+            )}
+
+            <button
+              onClick={() => window.location.href = window.location.pathname}
+              className="btn-secondary mt-6 py-3 px-6 rounded-xl"
+            >
+              Create Another Valentine
+            </button>
+          </div>
+        )}
+
+        {/* ALREADY ANSWERED */}
+        {!loading && !error && mode === 'already-answered' && (
+          <div className="smart-glass rounded-2xl p-10 md:p-12 text-center animate-fade-in">
+            <div className="text-5xl mb-6">
+              {valentineData?.reply === 'yes' ? '💕' : '💔'}
+            </div>
+
+            <h1 className="text-2xl md:text-3xl font-serif text-slate-800 mb-3 tracking-tight">
+              Already Answered!
+            </h1>
+            
+            <p className="text-slate-500 font-light">
+              This valentine has already been answered with: <br/>
+              <span className="font-medium text-lg text-rose-500">
+                {valentineData?.reply === 'yes' ? 'YES 💕' : 'No 😢'}
+              </span>
+            </p>
           </div>
         )}
       </div>
