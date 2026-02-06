@@ -39,6 +39,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [resultsCopied, setResultsCopied] = useState(false);
 
   // Original states for the YES/NO experience
   const [showQuestion, setShowQuestion] = useState(true);
@@ -181,6 +182,25 @@ function App() {
       document.body.removeChild(input);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const copyResultsLink = async () => {
+    const resultsLink = `${window.location.origin + window.location.pathname}?results=${valentineData?.code}`;
+    try {
+      await navigator.clipboard.writeText(resultsLink);
+      setResultsCopied(true);
+      setTimeout(() => setResultsCopied(false), 2000);
+    } catch {
+      // Fallback
+      const input = document.createElement('input');
+      input.value = resultsLink;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+      setResultsCopied(true);
+      setTimeout(() => setResultsCopied(false), 2000);
     }
   };
 
@@ -371,33 +391,73 @@ function App() {
 
         {/* LINK CREATED - Show the link to copy */}
         {!loading && !error && mode === 'create' && generatedLink && (
-          <div className="smart-glass rounded-2xl p-10 md:p-12 text-center animate-fade-in">
+          <div className="smart-glass rounded-2xl p-8 md:p-10 text-center animate-fade-in max-w-lg">
             <div className="text-5xl mb-6">🎉</div>
 
-            <h1 className="text-2xl md:text-3xl font-serif text-slate-800 mb-3 tracking-tight">
-              Your Valentine Link is Ready!
+            <h1 className="text-2xl md:text-3xl font-serif text-slate-800 mb-6 tracking-tight">
+              Your Valentine Links are Ready!
             </h1>
             
-            <p className="text-slate-500 mb-6 font-light">
-              Send this link to your special someone:
-            </p>
+            {/* Valentine Link Section */}
+            <div className="mb-6">
+              <div className="flex items-center justify-center mb-3">
+                <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center mr-2">
+                  <svg className="w-4 h-4 text-rose-500" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-slate-700">Send to Your Valentine</h3>
+              </div>
+              
+              <div className="bg-slate-50 rounded-xl p-4 mb-4 border border-slate-200">
+                <p className="text-xs text-slate-500 mb-2 font-medium">VALENTINE LINK</p>
+                <p className="text-sm text-slate-700 break-all font-mono leading-relaxed">
+                  {generatedLink}
+                </p>
+              </div>
 
-            <div className="bg-slate-50 rounded-xl p-4 mb-4 break-all text-sm text-slate-600 font-mono">
-              {generatedLink}
+              <button
+                onClick={copyLink}
+                className="btn-primary w-full py-3 rounded-xl text-base font-medium shadow-lg shadow-rose-200"
+              >
+                {copied ? '✓ Valentine Link Copied!' : '📋 Copy Valentine Link'}
+              </button>
             </div>
 
-            <button
-              onClick={copyLink}
-              className="btn-primary w-full py-4 rounded-xl text-lg font-medium shadow-lg shadow-rose-200 mb-4"
-            >
-              {copied ? '✓ Copied!' : 'Copy Link 📋'}
-            </button>
+            {/* Results Link Section */}
+            <div className="mb-6">
+              <div className="flex items-center justify-center mb-3">
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-2">
+                  <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-slate-700">Check Their Reply</h3>
+              </div>
+              
+              <div className="bg-blue-50 rounded-xl p-4 mb-4 border border-blue-200">
+                <p className="text-xs text-blue-600 mb-2 font-medium">RESULTS LINK (SAVE THIS)</p>
+                <p className="text-sm text-blue-700 break-all font-mono leading-relaxed">
+                  {window.location.origin + window.location.pathname}?results={valentineData?.code}
+                </p>
+              </div>
 
-            <div className="bg-rose-50 rounded-xl p-4 text-sm text-rose-700">
-              <p className="font-medium mb-1">📬 Check replies later:</p>
-              <p className="text-xs break-all font-mono">
-                {window.location.origin + window.location.pathname}?results={valentineData?.code}
-              </p>
+              <button
+                onClick={copyResultsLink}
+                className="btn-secondary w-full py-3 rounded-xl text-base font-medium border-blue-200 text-blue-600 hover:bg-blue-50"
+              >
+                {resultsCopied ? '✓ Results Link Copied!' : '📋 Copy Results Link'}
+              </button>
+            </div>
+
+            {/* Instructions */}
+            <div className="bg-gradient-to-r from-rose-50 to-blue-50 rounded-xl p-4 text-sm text-slate-600 border border-slate-200">
+              <p className="font-medium mb-2 text-slate-700">How it works:</p>
+              <ol className="text-left space-y-1 text-xs">
+                <li>1. Send the <strong className="text-rose-600">Valentine Link</strong> to your special someone</li>
+                <li>2. They answer YES or NO</li>
+                <li>3. Check back later using your <strong className="text-blue-600">Results Link</strong></li>
+              </ol>
             </div>
             
             <button
@@ -406,9 +466,9 @@ function App() {
                 setSenderName('');
                 setValentineData(null);
               }}
-              className="btn-secondary mt-4 py-3 px-6 rounded-xl text-sm"
+              className="btn-secondary mt-6 py-3 px-6 rounded-xl text-sm"
             >
-              Create Another
+              Create Another Valentine
             </button>
           </div>
         )}
