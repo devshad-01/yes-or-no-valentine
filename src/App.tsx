@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import './App.css';
 import wekamawe from "./assets/WekaMaweWekaMawenimbayaa-KENYAHAKUNAMATATA360ph264-ezgif.com-video-cutter.mp4";
 
